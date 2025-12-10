@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Demo SmartCampus Mobility - UIDE</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        
+        /* Layout: Mapa a la izquierda, Panel a la derecha */
+        #container { display: flex; height: 100vh; width: 100%; }
+        #map { flex: 3; height: 100%; }
+        #panel { flex: 1; background-color: #f8f9fa; padding: 25px; box-shadow: -2px 0 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: center; }
+
+        /* Estilos de las tarjetas del panel */
+        .header { margin-bottom: 30px; text-align: center; border-bottom: 2px solid #d32f2f; padding-bottom: 10px; }
+        .header h2 { margin: 0; color: #333; }
+        .header span { color: #d32f2f; font-weight: bold; font-size: 0.9em; }
+
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-2px); }
+        .card h3 { margin-top: 0; color: #555; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .data-point { font-size: 2.5rem; font-weight: 800; color: #222; margin: 10px 0; }
+        .unit { font-size: 1rem; color: #888; font-weight: normal; }
+        .status-badge { display: inline-block; padding: 5px 12px; border-radius: 20px; background: #e8f5e9; color: #2e7d32; font-weight: bold; font-size: 0.9rem; }
+        
+        /* Animación para el indicador de "En vivo" */
+        .live-indicator { height: 10px; width: 10px; background-color: red; border-radius: 50%; display: inline-block; margin-right: 5px; animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+    </style>
+</head>
+<body>
+
+    <div id="container">
+        <div id="map"></div>
+        <div id="panel">
+            <div class="header">
+                <h2>UIDE-Go</h2>
+                <p><span class="live-indicator"></span>CONEXIÓN EN TIEMPO REAL</p>
+            </div>
+
+            <div class="card">
+                <h3>Estado de la Unidad</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span class="status-badge" id="status-text">En Ruta</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.2rem; font-weight: bold;">Bus #04</div>
+                        <div style="font-size: 0.8rem; color: #666;">Placa: PAB-3421</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Ocupación (Aforo)</h3>
+                <div class="data-point" id="occupancy">18 <span class="unit">/ 40</span></div>
+                <div style="height: 6px; background: #eee; border-radius: 3px; width: 100%; overflow: hidden;">
+                    <div id="occupancy-bar" style="height: 100%; background: #4caf50; width: 45%;"></div>
+                </div>
+                <p style="font-size: 0.85rem; color: #666; margin-top: 5px;">Medición por sensor IA</p>
+            </div>
+
+            <div class="card">
+                <h3>Velocidad Promedio</h3>
+                <div class="data-point" id="speed">32 <span class="unit">km/h</span></div>
+            </div>
+
+            <div class="card">
+                <h3>Próxima Parada</h3>
+                <p style="font-size: 1.1rem; font-weight: 600; margin: 5px 0;">Campus UIDE</p>
+                <p style="color: #d32f2f; font-weight: bold;" id="eta">ETA: 5 min</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. CONFIGURACIÓN DEL MAPA
+        // Centrado en el sector medio de la ruta (Granados/Eloy Alfaro aprox)
+        var map = L.map('map').setView([-0.2425, -78.475], 14); 
+
+        // Capa de mapa (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; SmartCampus Demo'
+        }).addTo(map);
+
+        // Icono personalizado del Bus
+        var busIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448339.png',
+            iconSize: [45, 45], // Tamaño del icono
+            iconAnchor: [22, 45], // Punto del icono que corresponde a la coordenada (la base)
+            popupAnchor: [0, -40]
+        });
+
+        // Marcador inicial
+        var marker = L.marker([-0.24544, -78.46609], {icon: busIcon}).addTo(map);
+        marker.bindPopup("<b>Unidad 04</b><br>Ruta Interna").openPopup();
+
+        // 2. DATA DE RUTA (Tus coordenadas)
+        var ruta = [
+            // --- IDA (Orden Invertido: Inicio -> Fin) ---
+            [-0.24544950911730815, -78.46609775798441],
+            [-0.24443836350845877, -78.46973801237819],
+            [-0.2463608188289363, -78.4709850165354],
+            [-0.24407634979223392, -78.4729533768541],
+            [-0.24641916611277356, -78.48316224362031],
+            [-0.23786957605335582, -78.48548686890068],
+            
+            // --- REGRESO (Orden Original) ---
+            [-0.23776378842629517, -78.48396634127437],
+            [-0.24359267705372312, -78.4824854114067],
+            [-0.24318986781052757, -78.47496228762196],
+            [-0.24704906249433245, -78.4759318117784],
+            [-0.24493081643964715, -78.47307395489874],
+            [-0.24634498588702422, -78.47101569842579]
+        ];
+
+        // Rastro de la ruta (Línea azul en el mapa)
+        var polyline = L.polyline(ruta, {color: '#d32f2f', weight: 4, opacity: 0.7, dashArray: '10, 10'}).addTo(map);
+
+        // 3. LÓGICA DE ANIMACIÓN
+        var i = 0;
+        
+        setInterval(() => {
+            // Actualizar posición del bus
+            marker.setLatLng(ruta[i]);
+            
+            // Opcional: Que la cámara siga al bus suavemente
+            // map.panTo(ruta[i]); 
+
+            // Simulación de datos aleatorios para el panel (El "Amague")
+            updateFakeData();
+
+            // Avanzar índice
+            i++;
+            
+            // Loop infinito: Si llega al final, vuelve al inicio (0)
+            if (i >= ruta.length) {
+                i = 0;
+            }
+
+        }, 2500); // Velocidad: Se mueve cada 2.5 segundos
+
+        function updateFakeData() {
+            // 1. Velocidad (Entre 15 y 45 km/h)
+            let vel = Math.floor(Math.random() * (45 - 15 + 1) + 15);
+            document.getElementById('speed').innerHTML = vel + ' <span class="unit">km/h</span>';
+
+            // 2. Aforo (Cambia solo a veces para no parecer loco)
+            if(Math.random() > 0.7) { 
+                let currentAforo = parseInt(document.getElementById('occupancy').innerText);
+                // Suben o bajan 1 o 2 personas
+                let change = Math.floor(Math.random() * 3) - 1; 
+                let newAforo = currentAforo + change;
+                if(newAforo < 0) newAforo = 0;
+                if(newAforo > 40) newAforo = 40;
+
+                document.getElementById('occupancy').innerHTML = newAforo + ' <span class="unit">/ 40</span>';
+                
+                // Actualizar barrita visual
+                let percentage = (newAforo / 40) * 100;
+                document.getElementById('occupancy-bar').style.width = percentage + '%';
+                
+                // Cambiar color si está lleno
+                if(percentage > 80) {
+                    document.getElementById('occupancy-bar').style.background = '#d32f2f'; // Rojo
+                } else {
+                    document.getElementById('occupancy-bar').style.background = '#4caf50'; // Verde
+                }
+            }
+
+            // 3. ETA (Cuenta regresiva falsa)
+            // Simplemente alterna textos
+            if (i < 3) document.getElementById('eta').innerText = "ETA: 12 min";
+            else if (i < 6) document.getElementById('eta').innerText = "ETA: 8 min";
+            else if (i < 9) document.getElementById('eta').innerText = "ETA: 5 min";
+            else document.getElementById('eta').innerText = "ETA: 1 min";
+        }
+    </script>
+</body>
+</html>
