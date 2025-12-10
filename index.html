@@ -6,29 +6,41 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <style>
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; background: #1a1a1a; }
         
-        /* Layout: Mapa a la izquierda, Panel a la derecha */
+        /* Layout */
         #container { display: flex; height: 100vh; width: 100%; }
         #map { flex: 3; height: 100%; }
-        #panel { flex: 1; background-color: #f8f9fa; padding: 25px; box-shadow: -2px 0 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: center; }
+        #panel { flex: 1; background-color: #f8f9fa; padding: 25px; box-shadow: -2px 0 10px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow-y: auto; }
 
-        /* Estilos de las tarjetas del panel */
-        .header { margin-bottom: 30px; text-align: center; border-bottom: 2px solid #d32f2f; padding-bottom: 10px; }
-        .header h2 { margin: 0; color: #333; }
-        .header span { color: #d32f2f; font-weight: bold; font-size: 0.9em; }
-
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; transition: transform 0.2s; }
-        .card:hover { transform: translateY(-2px); }
-        .card h3 { margin-top: 0; color: #555; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; }
+        /* Estilos UI */
+        .header { margin-bottom: 20px; text-align: center; border-bottom: 3px solid #d32f2f; padding-bottom: 15px; }
+        .header h2 { margin: 0; color: #333; font-size: 1.8rem; }
         
-        .data-point { font-size: 2.5rem; font-weight: 800; color: #222; margin: 10px 0; }
+        .connection-status {
+            font-size: 0.8rem; font-weight: bold; margin-top: 5px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .dot { height: 10px; width: 10px; border-radius: 50%; background: #ccc; transition: background 0.3s; }
+        .dot.active { background: #00e676; box-shadow: 0 0 8px #00e676; }
+        .dot.error { background: #f44336; }
+
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .card h3 { margin-top: 0; color: #555; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        .big-data { font-size: 3rem; font-weight: 800; color: #222; margin: 10px 0; text-align: center; }
         .unit { font-size: 1rem; color: #888; font-weight: normal; }
-        .status-badge { display: inline-block; padding: 5px 12px; border-radius: 20px; background: #e8f5e9; color: #2e7d32; font-weight: bold; font-size: 0.9rem; }
         
-        /* Animación para el indicador de "En vivo" */
-        .live-indicator { height: 10px; width: 10px; background-color: red; border-radius: 50%; display: inline-block; margin-right: 5px; animation: blink 1s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        /* Barra de progreso */
+        .progress-bg { height: 10px; background: #eee; border-radius: 5px; width: 100%; overflow: hidden; margin-top: 10px; }
+        .progress-fill { height: 100%; background: #4caf50; width: 0%; transition: width 0.5s ease, background-color 0.5s; }
+
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .info-label { color: #666; font-weight: 500; }
+        .info-val { font-weight: bold; color: #000; }
+
+        /* ETA dinámico */
+        .eta-box { text-align: center; padding: 10px; background: #ffebee; border-radius: 8px; color: #c62828; font-weight: bold; margin-top: 10px; }
 
     </style>
 </head>
@@ -38,78 +50,73 @@
         <div id="map"></div>
         <div id="panel">
             <div class="header">
-                <h2>UIDE-Go</h2>
-                <p><span class="live-indicator"></span>CONEXIÓN EN TIEMPO REAL</p>
-            </div>
-
-            <div class="card">
-                <h3>Estado de la Unidad</h3>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span class="status-badge" id="status-text">En Ruta</span>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 1.2rem; font-weight: bold;">Bus #04</div>
-                        <div style="font-size: 0.8rem; color: #666;">Placa: PAB-3421</div>
-                    </div>
+                <h2>SmartCampus UIDE</h2>
+                <div class="connection-status">
+                    <span class="dot" id="status-dot"></span>
+                    <span id="status-text">CONECTANDO A SERVIDOR IOT...</span>
                 </div>
             </div>
 
             <div class="card">
-                <h3>Ocupación (Aforo)</h3>
-                <div class="data-point" id="occupancy">18 <span class="unit">/ 40</span></div>
-                <div style="height: 6px; background: #eee; border-radius: 3px; width: 100%; overflow: hidden;">
-                    <div id="occupancy-bar" style="height: 100%; background: #4caf50; width: 45%;"></div>
+                <h3>Monitor de Unidad</h3>
+                <div class="info-row"><span class="info-label">ID Bus:</span> <span class="info-val">#04 (Interno)</span></div>
+                <div class="info-row"><span class="info-label">Conductor:</span> <span class="info-val">Juan Pérez</span></div>
+                <div class="info-row"><span class="info-label">Placa:</span> <span class="info-val">PAB-3421</span></div>
+                <div class="info-row"><span class="info-label">Estado:</span> <span class="info-val" style="color:green">EN RUTA</span></div>
+            </div>
+
+            <div class="card">
+                <h3>Ocupación en Tiempo Real</h3>
+                <div class="big-data" id="occupancy">-- <span class="unit">/ 12</span></div>
+                
+                <div class="progress-bg">
+                    <div id="occupancy-bar" class="progress-fill"></div>
                 </div>
-                <p style="font-size: 0.85rem; color: #666; margin-top: 5px;">Medición por sensor IA</p>
+                <p style="text-align: center; font-size: 0.8rem; color: #888; margin-top: 10px;">Datos via Computer Vision API</p>
             </div>
 
             <div class="card">
-                <h3>Velocidad Promedio</h3>
-                <div class="data-point" id="speed">32 <span class="unit">km/h</span></div>
-            </div>
-
-            <div class="card">
-                <h3>Próxima Parada</h3>
-                <p style="font-size: 1.1rem; font-weight: 600; margin: 5px 0;">Campus UIDE</p>
-                <p style="color: #d32f2f; font-weight: bold;" id="eta">ETA: 5 min</p>
+                <h3>Telemetría</h3>
+                <div class="info-row"><span class="info-label">Velocidad:</span> <span class="info-val" id="speed">0 km/h</span></div>
+                <div class="info-row"><span class="info-label">Latencia:</span> <span class="info-val" id="latency">24 ms</span></div>
+                
+                <div class="eta-box" id="eta">CALCULANDO LLEGADA...</div>
             </div>
         </div>
     </div>
 
     <script>
+        // ---------------------------------------------------------
         // 1. CONFIGURACIÓN DEL MAPA
-        // Centrado en el sector medio de la ruta (Granados/Eloy Alfaro aprox)
+        // ---------------------------------------------------------
         var map = L.map('map').setView([-0.2425, -78.475], 14); 
 
-        // Capa de mapa (OpenStreetMap)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; SmartCampus Demo'
+            attribution: '© SmartCampus'
         }).addTo(map);
 
-        // Icono personalizado del Bus
         var busIcon = L.icon({
             iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448339.png',
-            iconSize: [45, 45], // Tamaño del icono
-            iconAnchor: [22, 45], // Punto del icono que corresponde a la coordenada (la base)
+            iconSize: [45, 45],
+            iconAnchor: [22, 45],
             popupAnchor: [0, -40]
         });
 
-        // Marcador inicial
         var marker = L.marker([-0.24544, -78.46609], {icon: busIcon}).addTo(map);
-        marker.bindPopup("<b>Unidad 04</b><br>Ruta Interna").openPopup();
+        marker.bindPopup("<b>Unidad 04</b><br>Monitoreo Activo").openPopup();
 
-        // 2. DATA DE RUTA (Tus coordenadas)
+        // ---------------------------------------------------------
+        // 2. RUTA COMPLETA (IDA Y VUELTA)
+        // ---------------------------------------------------------
         var ruta = [
-            // --- IDA (Orden Invertido: Inicio -> Fin) ---
+            // IDA (Invertida)
             [-0.24544950911730815, -78.46609775798441],
             [-0.24443836350845877, -78.46973801237819],
             [-0.2463608188289363, -78.4709850165354],
             [-0.24407634979223392, -78.4729533768541],
             [-0.24641916611277356, -78.48316224362031],
             [-0.23786957605335582, -78.48548686890068],
-            
-            // --- REGRESO (Orden Original) ---
+            // REGRESO
             [-0.23776378842629517, -78.48396634127437],
             [-0.24359267705372312, -78.4824854114067],
             [-0.24318986781052757, -78.47496228762196],
@@ -118,67 +125,81 @@
             [-0.24634498588702422, -78.47101569842579]
         ];
 
-        // Rastro de la ruta (Línea azul en el mapa)
-        var polyline = L.polyline(ruta, {color: '#d32f2f', weight: 4, opacity: 0.7, dashArray: '10, 10'}).addTo(map);
+        var polyline = L.polyline(ruta, {color: '#d32f2f', weight: 4}).addTo(map);
 
-        // 3. LÓGICA DE ANIMACIÓN
+        // ---------------------------------------------------------
+        // 3. CONEXIÓN CON TU PYTHON (ARCH LINUX)
+        // ---------------------------------------------------------
+        
+        // ¡¡IMPORTANTE: PON TU IP AQUÍ!! (Ej: http://192.168.100.255:5000/api/status)
+        // Si usas la misma PC usa localhost
+        const API_URL = "http://127.0.0.1:5000/api/status"; 
+
+        async function updateRealData() {
+            try {
+                // Fetch a la API de Python
+                let response = await fetch(API_URL);
+                
+                if (!response.ok) throw new Error('Error en red');
+                
+                let data = await response.json();
+                
+                // Actualizar UI con datos reales
+                let ocupacion = data.ocupacion;
+                let total = data.total_asientos;
+
+                document.getElementById('occupancy').innerHTML = `${ocupacion} <span class="unit">/ ${total}</span>`;
+                
+                // Barra de progreso
+                let pct = (ocupacion / total) * 100;
+                let bar = document.getElementById('occupancy-bar');
+                bar.style.width = pct + '%';
+                
+                if(pct > 80) bar.style.background = '#d32f2f'; // Rojo
+                else if(pct > 50) bar.style.background = '#ff9800'; // Naranja
+                else bar.style.background = '#4caf50'; // Verde
+
+                // Status OK
+                document.getElementById('status-dot').className = 'dot active';
+                document.getElementById('status-text').innerText = "EN LÍNEA (RECIBIENDO DATOS)";
+                document.getElementById('status-text').style.color = "#2e7d32";
+
+            } catch (error) {
+                console.log("Esperando servidor Python...");
+                // Status Error
+                document.getElementById('status-dot').className = 'dot error';
+                document.getElementById('status-text').innerText = "SIN CONEXIÓN AL BUS";
+                document.getElementById('status-text').style.color = "#c62828";
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 4. BUCLE PRINCIPAL (ANIMACIÓN + DATOS)
+        // ---------------------------------------------------------
         var i = 0;
         
         setInterval(() => {
-            // Actualizar posición del bus
+            // 1. Mover el bus (Simulación GPS)
             marker.setLatLng(ruta[i]);
             
-            // Opcional: Que la cámara siga al bus suavemente
-            // map.panTo(ruta[i]); 
+            // Simular velocidad
+            let vel = Math.floor(Math.random() * (45 - 20) + 20);
+            document.getElementById('speed').innerText = vel + " km/h";
 
-            // Simulación de datos aleatorios para el panel (El "Amague")
-            updateFakeData();
+            // Simular ETA según posición
+            let distRestante = ruta.length - i;
+            let etaMin = Math.ceil(distRestante * 0.8); // Calculo tonto para el demo
+            document.getElementById('eta').innerText = `LLEGADA ESTIMADA: ${etaMin} MIN`;
 
-            // Avanzar índice
+            // Avanzar índice ruta
             i++;
-            
-            // Loop infinito: Si llega al final, vuelve al inicio (0)
-            if (i >= ruta.length) {
-                i = 0;
-            }
+            if (i >= ruta.length) i = 0;
 
-        }, 2500); // Velocidad: Se mueve cada 2.5 segundos
+            // 2. Pedir datos reales de ocupación
+            updateRealData();
 
-        function updateFakeData() {
-            // 1. Velocidad (Entre 15 y 45 km/h)
-            let vel = Math.floor(Math.random() * (45 - 15 + 1) + 15);
-            document.getElementById('speed').innerHTML = vel + ' <span class="unit">km/h</span>';
+        }, 1500); // Se actualiza cada 1.5 seg
 
-            // 2. Aforo (Cambia solo a veces para no parecer loco)
-            if(Math.random() > 0.7) { 
-                let currentAforo = parseInt(document.getElementById('occupancy').innerText);
-                // Suben o bajan 1 o 2 personas
-                let change = Math.floor(Math.random() * 3) - 1; 
-                let newAforo = currentAforo + change;
-                if(newAforo < 0) newAforo = 0;
-                if(newAforo > 40) newAforo = 40;
-
-                document.getElementById('occupancy').innerHTML = newAforo + ' <span class="unit">/ 40</span>';
-                
-                // Actualizar barrita visual
-                let percentage = (newAforo / 40) * 100;
-                document.getElementById('occupancy-bar').style.width = percentage + '%';
-                
-                // Cambiar color si está lleno
-                if(percentage > 80) {
-                    document.getElementById('occupancy-bar').style.background = '#d32f2f'; // Rojo
-                } else {
-                    document.getElementById('occupancy-bar').style.background = '#4caf50'; // Verde
-                }
-            }
-
-            // 3. ETA (Cuenta regresiva falsa)
-            // Simplemente alterna textos
-            if (i < 3) document.getElementById('eta').innerText = "ETA: 12 min";
-            else if (i < 6) document.getElementById('eta').innerText = "ETA: 8 min";
-            else if (i < 9) document.getElementById('eta').innerText = "ETA: 5 min";
-            else document.getElementById('eta').innerText = "ETA: 1 min";
-        }
     </script>
 </body>
 </html>
